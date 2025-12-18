@@ -23,6 +23,12 @@ A complete step-by-step guide to creating feature flags and release pipelines us
 11. [Progress to Integration Phase](#step-11-progress-to-integration-phase)
 12. [Progress to Production Phase](#step-12-progress-to-production-phase)
 
+**Additional Topics:**
+- [Phase Statuses Reference](#phase-statuses-reference)
+- [Rollback Options](#rollback-options) ← Emergency rollback procedures
+- [Additional API Endpoints](#additional-api-endpoints)
+- [Quick Reference: ZipHQ Release IDs](#quick-reference-ziphq-release-ids)
+
 ---
 
 ## Overview: Release Pipeline Flow
@@ -1277,6 +1283,196 @@ with urllib.request.urlopen(req) as response:
 | `active` | Phase is currently running, flag is ON in this environment |
 | `complete` | Phase has finished successfully |
 | `not-started` | Previous phases must complete first |
+
+---
+
+## Rollback Options
+
+If something goes wrong during a release, you have several rollback options.
+
+> ⚠️ **Important**: You cannot "undo" a completed phase - once a phase is completed, it cannot be reverted. Use the flag toggle or delete release options instead.
+
+### Rollback Comparison
+
+| Method | Speed | Effect | Use Case |
+|--------|-------|--------|----------|
+| **Turn off flag** | ⚡ Instant | Flag returns `false` in that environment | Emergency rollback |
+| **Delete release** | Fast | Removes flag from pipeline | Start over with new pipeline |
+| **Cancel release** | Fast | Stops progression | Pause and investigate |
+
+---
+
+### Option 1: Turn Off the Flag (Recommended for Emergencies)
+
+The fastest rollback - immediately disable the flag in any environment. Users will instantly receive the "off" variation.
+
+**Request:**
+```
+PATCH https://app.launchdarkly.com/api/v2/flags/{projectKey}/{flagKey}
+```
+
+**Headers:**
+```
+Authorization: <YOUR_API_KEY>
+Content-Type: application/json
+```
+
+**Request Body (JSON Patch):**
+```json
+[
+  {
+    "op": "replace",
+    "path": "/environments/production/on",
+    "value": false
+  }
+]
+```
+
+**Python Code:**
+```python
+import urllib.request
+import json
+
+url = 'https://app.launchdarkly.com/api/v2/flags/arif-skyhigh-releasedemo/ziphq'
+
+# Turn off the flag in production
+patch_data = [
+    {
+        "op": "replace",
+        "path": "/environments/production/on",
+        "value": False
+    }
+]
+
+data = json.dumps(patch_data).encode('utf-8')
+
+req = urllib.request.Request(url, data=data, method='PATCH')
+req.add_header('Authorization', '<YOUR_API_KEY>')
+req.add_header('Content-Type', 'application/json')
+
+try:
+    with urllib.request.urlopen(req) as response:
+        print('✅ Flag turned OFF in production - rollback complete!')
+except urllib.error.HTTPError as e:
+    print(f'Error: {e.code}')
+    print(e.read().decode())
+```
+
+**Turn Off in Multiple Environments:**
+```json
+[
+  {"op": "replace", "path": "/environments/production/on", "value": false},
+  {"op": "replace", "path": "/environments/int/on", "value": false},
+  {"op": "replace", "path": "/environments/qa/on", "value": false},
+  {"op": "replace", "path": "/environments/dev/on", "value": false}
+]
+```
+
+---
+
+### Option 2: Delete the Release
+
+Remove the flag from the release pipeline entirely. The flag remains but is no longer tracked by the pipeline.
+
+**Request:**
+```
+DELETE https://app.launchdarkly.com/api/v2/projects/{projectKey}/flags/{flagKey}/release
+```
+
+**Headers:**
+```
+Authorization: <YOUR_API_KEY>
+LD-API-Version: beta
+```
+
+**Python Code:**
+```python
+import urllib.request
+
+url = 'https://app.launchdarkly.com/api/v2/projects/arif-skyhigh-releasedemo/flags/ziphq/release'
+
+req = urllib.request.Request(url, method='DELETE')
+req.add_header('Authorization', '<YOUR_API_KEY>')
+req.add_header('LD-API-Version', 'beta')
+
+try:
+    with urllib.request.urlopen(req) as response:
+        print('✅ Release deleted - flag removed from pipeline')
+        print('   The flag still exists but is no longer in the release pipeline')
+except urllib.error.HTTPError as e:
+    print(f'Error: {e.code}')
+    print(e.read().decode())
+```
+
+**After Deleting Release:**
+- Flag still exists in all environments
+- Flag state (on/off) is unchanged
+- Flag is no longer tracked by the release pipeline
+- You can add it to a new pipeline later
+
+---
+
+### Option 3: Turn Off Flag + Delete Release (Complete Rollback)
+
+For a complete rollback, combine both approaches:
+
+**Python Code:**
+```python
+import urllib.request
+import json
+
+# Step 1: Turn off flag in all environments
+flag_url = 'https://app.launchdarkly.com/api/v2/flags/arif-skyhigh-releasedemo/ziphq'
+
+patch_data = [
+    {"op": "replace", "path": "/environments/dev/on", "value": False},
+    {"op": "replace", "path": "/environments/qa/on", "value": False},
+    {"op": "replace", "path": "/environments/int/on", "value": False},
+    {"op": "replace", "path": "/environments/production/on", "value": False}
+]
+
+data = json.dumps(patch_data).encode('utf-8')
+req = urllib.request.Request(flag_url, data=data, method='PATCH')
+req.add_header('Authorization', '<YOUR_API_KEY>')
+req.add_header('Content-Type', 'application/json')
+
+with urllib.request.urlopen(req) as response:
+    print('✅ Step 1: Flag turned OFF in all environments')
+
+# Step 2: Delete the release
+release_url = 'https://app.launchdarkly.com/api/v2/projects/arif-skyhigh-releasedemo/flags/ziphq/release'
+
+req = urllib.request.Request(release_url, method='DELETE')
+req.add_header('Authorization', '<YOUR_API_KEY>')
+req.add_header('LD-API-Version', 'beta')
+
+with urllib.request.urlopen(req) as response:
+    print('✅ Step 2: Release deleted from pipeline')
+
+print('')
+print('🔄 Complete rollback finished!')
+print('   - Flag is OFF in all environments')
+print('   - Flag is removed from the release pipeline')
+```
+
+---
+
+### Rollback Decision Tree
+
+```
+Is there an emergency?
+    │
+    ├── YES → Turn off flag immediately (Option 1)
+    │         Then investigate and decide next steps
+    │
+    └── NO → Do you want to continue the release later?
+              │
+              ├── YES → Just turn off the flag (Option 1)
+              │         Fix the issue, then turn it back on
+              │
+              └── NO → Delete the release (Option 2)
+                       Start fresh with a new release
+```
 
 ---
 
