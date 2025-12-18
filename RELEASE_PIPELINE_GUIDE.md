@@ -19,7 +19,9 @@ A complete step-by-step guide to creating feature flags and release pipelines us
 7. [Integrate Flag in Your Application](#step-7-integrate-flag-in-your-application)
 8. [Test the Flag](#step-8-test-the-flag)
 9. [Get Release Status](#step-9-get-release-status)
-10. [Complete Phase and Progress to QA](#step-10-complete-phase-and-progress-to-qa)
+10. [Progress to QA Phase](#step-10-progress-to-qa-phase)
+11. [Progress to Integration Phase](#step-11-progress-to-integration-phase)
+12. [Progress to Production Phase](#step-12-progress-to-production-phase)
 
 ---
 
@@ -1004,55 +1006,46 @@ with urllib.request.urlopen(req) as response:
 
 ---
 
-## Step 10: Complete Phase and Progress to QA
+## Step 10: Progress to QA Phase
 
 Once testing is complete in Dev, progress to the next phase.
 
-### 10.1 Complete Dev Phase
+> ⚠️ **Important**: You can only manually set a phase to `active`. Phases are **automatically marked as `completed`** when you start the next phase.
 
-Mark the Dev phase as complete:
+### 10.1 How Phase Completion Works
+
+| Action | Result |
+|--------|--------|
+| Start next phase | Previous phase automatically marked `completed` |
+| Manual status update | Only `active` is allowed |
+
+**You cannot manually set a phase to `complete` or `completed`** - the API will reject it with:
+```json
+{"code":"invalid_request","message":"Phase status can only be manually updated to `Active`."}
+```
+
+### 10.2 Start QA Phase (Completes Dev Automatically)
+
+Starting QA will automatically complete the Dev phase.
 
 **Request:**
 ```
 PUT https://app.launchdarkly.com/api/v2/projects/{projectKey}/flags/{flagKey}/release/phases/{phaseId}
 ```
 
+**Headers:**
+```
+Authorization: <YOUR_API_KEY>
+Content-Type: application/json
+LD-API-Version: beta
+```
+
 **Request Body:**
 ```json
 {
-  "status": "complete"
+  "status": "active"
 }
 ```
-
-**Python Code:**
-```python
-import urllib.request
-import json
-
-# Dev phase ID
-phase_id = 'ec2d2e01-8d90-49a1-8417-02527cbebc77'
-
-url = f'https://app.launchdarkly.com/api/v2/projects/arif-skyhigh-releasedemo/flags/ziphq/release/phases/{phase_id}'
-
-phase_data = {
-    "status": "complete"
-}
-
-data = json.dumps(phase_data).encode('utf-8')
-
-req = urllib.request.Request(url, data=data, method='PUT')
-req.add_header('Authorization', '<YOUR_API_KEY>')
-req.add_header('Content-Type', 'application/json')
-req.add_header('LD-API-Version', 'beta')
-
-with urllib.request.urlopen(req) as response:
-    result = json.loads(response.read().decode())
-    print(json.dumps(result, indent=2))
-```
-
-### 10.2 Start QA Phase
-
-After Dev is complete, start the QA phase:
 
 **Python Code:**
 ```python
@@ -1075,44 +1068,204 @@ req.add_header('Authorization', '<YOUR_API_KEY>')
 req.add_header('Content-Type', 'application/json')
 req.add_header('LD-API-Version', 'beta')
 
-with urllib.request.urlopen(req) as response:
-    result = json.loads(response.read().decode())
-    print(json.dumps(result, indent=2))
+try:
+    with urllib.request.urlopen(req) as response:
+        result = json.loads(response.read().decode())
+        print('✅ QA phase ACTIVATED!')
+        # Dev is now automatically completed
+        for phase in result.get('phases', []):
+            status = phase.get('status', 'unknown')
+            name = phase.get('_name', 'unknown')
+            print(f'{name}: {status}')
+except urllib.error.HTTPError as e:
+    print(f'Error: {e.code}')
+    print(e.read().decode())
 ```
 
-### 10.3 Phase IDs Reference
+**Response:**
+```json
+{
+  "name": "ZipHQ Release Pipeline",
+  "releasePipelineKey": "ziphq-release-pipeline",
+  "phases": [
+    {
+      "_id": "ec2d2e01-8d90-49a1-8417-02527cbebc77",
+      "_name": "Dev",
+      "status": "completed",
+      "started": true,
+      "complete": true
+    },
+    {
+      "_id": "91ae0637-8a08-432e-a36a-4a920bbe40ed",
+      "_name": "QA",
+      "status": "active",
+      "started": true,
+      "complete": false
+    },
+    {
+      "_id": "88788d9b-999b-4a19-a49f-ae037eb47149",
+      "_name": "Integration",
+      "status": "not-started",
+      "started": false,
+      "complete": false
+    },
+    {
+      "_id": "61066305-b150-489a-894c-d577ba6a3f49",
+      "_name": "Production",
+      "status": "not-started",
+      "started": false,
+      "complete": false
+    }
+  ]
+}
+```
 
-| Phase | Phase ID |
-|-------|----------|
-| Dev | `ec2d2e01-8d90-49a1-8417-02527cbebc77` |
-| QA | `91ae0637-8a08-432e-a36a-4a920bbe40ed` |
-| Integration | `88788d9b-999b-4a19-a49f-ae037eb47149` |
-| Production | `61066305-b150-489a-894c-d577ba6a3f49` |
-
-### 10.4 Full Release Progression
-
-| Step | Action | Phase ID | Endpoint Body |
-|------|--------|----------|---------------|
-| 1 | Start Dev | `ec2d2e01-...` | `{"status": "active"}` |
-| 2 | Complete Dev | `ec2d2e01-...` | `{"status": "complete"}` |
-| 3 | Start QA | `91ae0637-...` | `{"status": "active"}` |
-| 4 | Complete QA | `91ae0637-...` | `{"status": "complete"}` |
-| 5 | Start Int | `88788d9b-...` | `{"status": "active"}` |
-| 6 | Complete Int | `88788d9b-...` | `{"status": "complete"}` |
-| 7 | Start Prod | `61066305-...` | `{"status": "active"}` |
-| 8 | Complete Prod | `61066305-...` | `{"status": "complete"}` |
-
-### State After Completing All Phases
+### State After Step 10
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │      Dev        │ →  │       QA        │ →  │   Integration   │ →  │   Production    │
-│   ✅ COMPLETE   │    │   ✅ COMPLETE   │    │   ✅ COMPLETE   │    │   ✅ COMPLETE   │
+│  ✅ COMPLETED   │    │    ✅ ACTIVE    │    │   not-started   │    │   not-started   │
+│  Flag: TRUE     │    │  Flag: TRUE     │    │  Flag: FALSE    │    │  Flag: FALSE    │
+└─────────────────┘    └─────────────────┘    └─────────────────┘    └─────────────────┘
+```
+
+---
+
+## Step 11: Progress to Integration Phase
+
+After testing in QA, start the Integration phase.
+
+### 11.1 Start Integration Phase (Completes QA Automatically)
+
+**Request:**
+```
+PUT https://app.launchdarkly.com/api/v2/projects/arif-skyhigh-releasedemo/flags/ziphq/release/phases/88788d9b-999b-4a19-a49f-ae037eb47149
+```
+
+**Request Body:**
+```json
+{
+  "status": "active"
+}
+```
+
+**Python Code:**
+```python
+import urllib.request
+import json
+
+# Integration phase ID
+int_phase_id = '88788d9b-999b-4a19-a49f-ae037eb47149'
+
+url = f'https://app.launchdarkly.com/api/v2/projects/arif-skyhigh-releasedemo/flags/ziphq/release/phases/{int_phase_id}'
+
+phase_data = {
+    "status": "active"
+}
+
+data = json.dumps(phase_data).encode('utf-8')
+
+req = urllib.request.Request(url, data=data, method='PUT')
+req.add_header('Authorization', '<YOUR_API_KEY>')
+req.add_header('Content-Type', 'application/json')
+req.add_header('LD-API-Version', 'beta')
+
+with urllib.request.urlopen(req) as response:
+    result = json.loads(response.read().decode())
+    print('✅ Integration phase ACTIVATED! (QA auto-completed)')
+```
+
+### State After Step 11
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│      Dev        │ →  │       QA        │ →  │   Integration   │ →  │   Production    │
+│  ✅ COMPLETED   │    │  ✅ COMPLETED   │    │    ✅ ACTIVE    │    │   not-started   │
+│  Flag: TRUE     │    │  Flag: TRUE     │    │  Flag: TRUE     │    │  Flag: FALSE    │
+└─────────────────┘    └─────────────────┘    └─────────────────┘    └─────────────────┘
+```
+
+---
+
+## Step 12: Progress to Production Phase
+
+Final step - release to Production!
+
+### 12.1 Start Production Phase (Completes Integration Automatically)
+
+**Request:**
+```
+PUT https://app.launchdarkly.com/api/v2/projects/arif-skyhigh-releasedemo/flags/ziphq/release/phases/61066305-b150-489a-894c-d577ba6a3f49
+```
+
+**Request Body:**
+```json
+{
+  "status": "active"
+}
+```
+
+**Python Code:**
+```python
+import urllib.request
+import json
+
+# Production phase ID
+prod_phase_id = '61066305-b150-489a-894c-d577ba6a3f49'
+
+url = f'https://app.launchdarkly.com/api/v2/projects/arif-skyhigh-releasedemo/flags/ziphq/release/phases/{prod_phase_id}'
+
+phase_data = {
+    "status": "active"
+}
+
+data = json.dumps(phase_data).encode('utf-8')
+
+req = urllib.request.Request(url, data=data, method='PUT')
+req.add_header('Authorization', '<YOUR_API_KEY>')
+req.add_header('Content-Type', 'application/json')
+req.add_header('LD-API-Version', 'beta')
+
+with urllib.request.urlopen(req) as response:
+    result = json.loads(response.read().decode())
+    print('✅ Production phase ACTIVATED! (Integration auto-completed)')
+    print('🎉 Release complete - flag is now ON in all environments!')
+```
+
+### State After Step 12 - Release Complete! 🎉
+
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│      Dev        │ →  │       QA        │ →  │   Integration   │ →  │   Production    │
+│  ✅ COMPLETED   │    │  ✅ COMPLETED   │    │  ✅ COMPLETED   │    │    ✅ ACTIVE    │
 │  Flag: TRUE     │    │  Flag: TRUE     │    │  Flag: TRUE     │    │  Flag: TRUE     │
 └─────────────────┘    └─────────────────┘    └─────────────────┘    └─────────────────┘
 
-🎉 Release Complete! Flag is now enabled in all environments.
+🎉 RELEASE COMPLETE! The ziphq flag is now enabled in ALL environments!
 ```
+
+---
+
+## Phase IDs Quick Reference
+
+| Phase | Phase ID | Endpoint |
+|-------|----------|----------|
+| Dev | `ec2d2e01-8d90-49a1-8417-02527cbebc77` | `.../phases/ec2d2e01-8d90-49a1-8417-02527cbebc77` |
+| QA | `91ae0637-8a08-432e-a36a-4a920bbe40ed` | `.../phases/91ae0637-8a08-432e-a36a-4a920bbe40ed` |
+| Integration | `88788d9b-999b-4a19-a49f-ae037eb47149` | `.../phases/88788d9b-999b-4a19-a49f-ae037eb47149` |
+| Production | `61066305-b150-489a-894c-d577ba6a3f49` | `.../phases/61066305-b150-489a-894c-d577ba6a3f49` |
+
+## Full Release Progression Summary
+
+| Step | Action | Phase ID | Request Body | Result |
+|------|--------|----------|--------------|--------|
+| 1 | Start Dev | `ec2d2e01-...` | `{"status": "active"}` | Dev: active |
+| 2 | Start QA | `91ae0637-...` | `{"status": "active"}` | Dev: completed, QA: active |
+| 3 | Start Int | `88788d9b-...` | `{"status": "active"}` | QA: completed, Int: active |
+| 4 | Start Prod | `61066305-...` | `{"status": "active"}` | Int: completed, Prod: active |
+
+> 💡 **Key Insight**: You only ever send `{"status": "active"}` - previous phases complete automatically!
 
 ---
 
