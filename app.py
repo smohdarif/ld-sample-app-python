@@ -66,6 +66,9 @@ ldclient.get().flag_tracker.add_flag_value_change_listener(
 ldclient.get().flag_tracker.add_flag_value_change_listener(
     "coffee-promo-2", mycontext, changer
 )
+ldclient.get().flag_tracker.add_flag_value_change_listener(
+    "ziphq", mycontext, changer
+)
 
 
 @app.route("/")
@@ -76,6 +79,7 @@ def show_page():
     )
     coffee_promo_1 = ldclient.get().variation("coffee-promo-1", mycontext, False)
     coffee_promo_2 = ldclient.get().variation("coffee-promo-2", mycontext, False)
+    ziphq_enabled = ldclient.get().variation("ziphq", mycontext, False)
     retval = make_response(
         render_template(
             "index.html",
@@ -83,6 +87,7 @@ def show_page():
             home_page_slider=home_page_slider,
             coffee_promo_1=coffee_promo_1,
             coffee_promo_2=coffee_promo_2,
+            ziphq_enabled=ziphq_enabled,
         )
     )
     return retval
@@ -121,6 +126,20 @@ def home_page_banner():
         "banner-text", mycontext, "No banner text found!"
     )
     return {"primaryBanner": primary_banner}
+
+
+@app.route("/api/ziphq")
+def ziphq_status():
+    """API endpoint to check ZipHQ feature flag status"""
+    ziphq_enabled = ldclient.get().variation("ziphq", mycontext, False)
+    return {
+        "flag": "ziphq",
+        "enabled": ziphq_enabled,
+        "context": {
+            "user": mycontext.get("user").key,
+            "name": mycontext.get("user").get("name")
+        }
+    }
 
 
 if __name__ == "__main__":
